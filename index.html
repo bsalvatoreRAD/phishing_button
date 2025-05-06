@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inoltra Email</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background-color: #f4f4f4;
+        }
+        .header {
+            background-color: #0078d4;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input[type="email"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .btn {
+            background-color: #0078d4;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #005a9e;
+        }
+        .btn-secondary {
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background-color: #e0e0e0;
+        }
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .buttons {
+            display: flex;
+            justify-content: space-between;
+        }
+        .checkbox-group {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>Inoltra Email</h2>
+    </div>
+    
+    <div class="container">
+        <div class="form-group">
+            <label for="recipient">Indirizzo email destinatario:</label>
+            <input type="email" id="recipient" placeholder="esempio@dominio.com" value="destinatario@esempio.com">
+        </div>
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="keepCopy" checked>
+            <label for="keepCopy">Mantieni una copia nella casella di posta</label>
+        </div>
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="addPrefix">
+            <label for="addPrefix">Aggiungi prefisso all'oggetto</label>
+        </div>
+        
+        <div class="form-group" id="prefixGroup" style="display: none;">
+            <label for="prefix">Prefisso:</label>
+            <input type="text" id="prefix" placeholder="Inoltrato: ">
+        </div>
+        
+        <div class="buttons">
+            <button class="btn" id="forwardButton">Inoltra</button>
+            <button class="btn btn-secondary" id="saveSettingsButton">Salva Impostazioni</button>
+        </div>
+        
+        <div id="statusMessage" class="status" style="display: none;"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script>
+        (function() {
+            'use strict';
+            
+            // Inizializzazione dell'add-in Office
+            Office.onReady(function(info) {
+                if (info.host === Office.HostType.Outlook) {
+                    // Inizializza l'UI e gli eventi
+                    initializeUI();
+                    attachEventHandlers();
+                    loadSettings();
+                }
+            });
+            
+            function initializeUI() {
+                // Mostra o nasconde il campo prefisso in base allo stato della checkbox
+                $('#addPrefix').change(function() {
+                    if ($(this).is(':checked')) {
+                        $('#prefixGroup').show();
+                    } else {
+                        $('#prefixGroup').hide();
+                    }
+                });
+            }
+            
+            function attachEventHandlers() {
+                // Gestisce il clic sul pulsante di inoltro
+                $('#forwardButton').click(forwardEmail);
+                
+                // Gestisce il salvataggio delle impostazioni
+                $('#saveSettingsButton').click(saveSettings);
+            }
+            
+            function loadSettings() {
+                // Carica le impostazioni salvate (se presenti)
+                try {
+                    const settings = Office.context.roamingSettings.get('forwardSettings');
+                    if (settings) {
+                        $('#recipient').val(settings.recipient || '');
+                        $('#keepCopy').prop('checked', settings.keepCopy !== false);
+                        $('#addPrefix').prop('checked', settings.addPrefix === true);
+                        $('#prefix').val(settings.prefix || 'Inoltrato: ');
+                        
+                        // Aggiorna la visibilità del campo prefisso
+                        if (settings.addPrefix) {
+                            $('#prefixGroup').show();
+                        }
+                    }
+                } catch (error) {
+                    showStatus('Errore nel caricamento delle impostazioni', true);
+                }
+            }
+            
+            function saveSettings() {
+                try {
+                    // Salva le impostazioni correnti
+                    const settings = {
+                        recipient: $('#recipient').val(),
+                        keepCopy: $('#keepCopy').is(':checked'),
+                        addPrefix: $('#addPrefix').is(':checked'),
+                        prefix: $('#prefix').val()
+                    };
+                    
+                    // Salva nelle impostazioni Office
+                    Office.context.roamingSettings.set('forwardSettings', settings);
+                    Office.context.roamingSettings.saveAsync(function(result) {
+                        if (result.status === Office.AsyncResultStatus.Succeeded) {
+                            showStatus('Impostazioni salvate con successo!', false);
+                        } else {
+                            showStatus('Errore nel salvataggio delle impostazioni', true);
+                        }
+                    });
+                } catch (error) {
+                    showStatus('Errore: ' + error.message, true);
+                }
+            }
+            
+            function forwardEmail() {
+                // Ottieni l'item corrente (email)
+                Office.context.mailbox.item.getAsync({ asyncContext: "This is passed to the callback" },
+                    function (asyncResult) {
+                        if (asyncResult.status === Office.AsyncResultStatus.Failed) {
+                            showStatus('Errore nell\'ottenimento dell\'email', true);
+                            return;
+                        }
+                        
+                        // Ottieni le proprietà dell'email corrente
+                        const mailItem = asyncResult.value;
+                        
+                        // Crea un nuovo messaggio di inoltro
+                        const recipientEmail = $('#recipient').val();
+                        if (!recipientEmail) {
+                            showStatus('Inserisci un indirizzo email valido', true);
+                            return;
+                        }
+                        
+                        // Ottiene il contenuto dell'email
+                        Office.context.mailbox.item.body.getAsync(Office.CoercionType.Html, function(result) {
+                            if (result.status === Office.AsyncResultStatus.Succeeded) {
+                                const body = result.value;
+                                const subject = Office.context.mailbox.item.subject;
+                                
+                                // Gestisci il prefisso dell'oggetto
+                                let newSubject = subject;
+                                if ($('#addPrefix').is(':checked')) {
+                                    const prefix = $('#prefix').val() || 'Inoltrato: ';
+                                    newSubject = prefix + subject;
+                                }
+                                
+                                // Crea una nuova email
+                                createAndSendEmail(recipientEmail, newSubject, body);
+                            } else {
+                                showStatus('Errore nell\'ottenimento del contenuto dell\'email', true);
+                            }
+                        });
+                    }
+                );
+            }
+            
+            function createAndSendEmail(recipient, subject, body) {
+                // Crea una nuova email di inoltro
+                const keepCopy = $('#keepCopy').is(':checked');
+                
+                // Usa l'API EWS per l'inoltro
+                const ewsId = Office.context.mailbox.item.itemId;
+                const mailbox = Office.context.mailbox;
+                
+                // XML SOAP per l'inoltro dell'email
+                let soapEnvelope = 
+                    '<?xml version="1.0" encoding="utf-8"?>' +
+                    '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
+                    '               xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"' +
+                    '               xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"' +
+                    '               xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">' +
+                    '  <soap:Header>' +
+                    '    <t:RequestServerVersion Version="Exchange2013" />' +
+                    '  </soap:Header>' +
+                    '  <soap:Body>' +
+                    '    <m:CreateItem MessageDisposition="SendAndSaveCopy">' +
+                    '      <m:Items>' +
+                    '        <t:ForwardItem>' +
+                    '          <t:ToRecipients>' +
+                    '            <t:Mailbox>' +
+                    '              <t:EmailAddress>' + recipient + '</t:EmailAddress>' +
+                    '            </t:Mailbox>' +
+                    '          </t:ToRecipients>' +
+                    '          <t:ReferenceItemId Id="' + ewsId + '" />' +
+                    '          <t:NewBodyContent BodyType="HTML">' + body + '</t:NewBodyContent>' +
+                    '          <t:Subject>' + subject + '</t:Subject>' +
+                    '        </t:ForwardItem>' +
+                    '      </m:Items>' +
+                    '    </m:CreateItem>' +
+                    '  </soap:Body>' +
+                    '</soap:Envelope>';
+                
+                // Invia la richiesta EWS
+                mailbox.makeEwsRequestAsync(soapEnvelope, function(result) {
+                    if (result.status === Office.AsyncResultStatus.Succeeded) {
+                        showStatus('Email inoltrata con successo a ' + recipient, false);
+                        
+                        // Se l'utente non vuole mantenere una copia, segna come letta
+                        if (!keepCopy) {
+                            markAsRead();
+                        }
+                    } else {
+                        showStatus('Errore nell\'inoltro dell\'email: ' + result.error.message, true);
+                    }
+                });
+            }
+            
+            function markAsRead() {
+                // Segna l'email come letta
+                const ewsId = Office.context.mailbox.item.itemId;
+                const mailbox = Office.context.mailbox;
+                
+                let markReadSoap = 
+                    '<?xml version="1.0" encoding="utf-8"?>' +
+                    '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
+                    '               xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"' +
+                    '               xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"' +
+                    '               xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">' +
+                    '  <soap:Header>' +
+                    '    <t:RequestServerVersion Version="Exchange2013" />' +
+                    '  </soap:Header>' +
+                    '  <soap:Body>' +
+                    '    <m:UpdateItem MessageDisposition="SaveOnly" ConflictResolution="AutoResolve">' +
+                    '      <m:ItemChanges>' +
+                    '        <t:ItemChange>' +
+                    '          <t:ItemId Id="' + ewsId + '"/>' +
+                    '          <t:Updates>' +
+                    '            <t:SetItemField>' +
+                    '              <t:FieldURI FieldURI="message:IsRead"/>' +
+                    '              <t:Message>' +
+                    '                <t:IsRead>true</t:IsRead>' +
+                    '              </t:Message>' +
+                    '            </t:SetItemField>' +
+                    '          </t:Updates>' +
+                    '        </t:ItemChange>' +
+                    '      </m:ItemChanges>' +
+                    '    </m:UpdateItem>' +
+                    '  </soap:Body>' +
+                    '</soap:Envelope>';
+                
+                mailbox.makeEwsRequestAsync(markReadSoap, function(result) {
+                    // Non facciamo nulla qui, è solo un'operazione addizionale
+                });
+            }
+            
+            function showStatus(message, isError) {
+                const statusElement = $('#statusMessage');
+                statusElement.text(message);
+                statusElement.removeClass('success error');
+                statusElement.addClass(isError ? 'error' : 'success');
+                statusElement.show();
+                
+                // Nasconde il messaggio dopo 5 secondi
+                setTimeout(function() {
+                    statusElement.fadeOut();
+                }, 5000);
+            }
+        })();
+    </script>
+</body>
+</html>
